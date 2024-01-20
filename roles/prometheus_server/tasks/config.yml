@@ -1,0 +1,9 @@
+- name: Atualizando configuracão do prometheus
+  ansible.builtin.copy:
+    src: "prometheus.yml"
+    dest: /etc/prometheus/prometheus.yml
+    group: prometheus
+    owner: prometheus
+  notify: Restart prometheus
+  tags: 
+    - update

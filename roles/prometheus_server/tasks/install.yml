@@ -1,0 +1,98 @@
+- name: Configura o grupo e o usuario prometheus
+  block:
+    - name: Garante que o grupo "prometheus" foi criado
+      ansible.builtin.group:
+        name: prometheus
+        state: present
+    
+    - name: Garante que o usuário "prometheus" foi criado
+      ansible.builtin.user:
+        name: prometheus
+        state: present
+        group: prometheus
+        create_home: false
+        system: true
+      register: prometheus_user
+
+  rescue:
+    - name: Falha na configuracão do usuário/grupo
+      ansible.builtin.debug:
+        msg: ¨Falha durante a criação do usuario/grupo¨
+
+  always:
+    - name: Fim do processo de configuração de usuarios
+      ansible.builtin.debug:
+        msg: "Usuario {{prometheus_user.name}} criado com sucesso!"
+      when: prometheus_user is defined
+
+
+# Download do prometheus_server
+- name: Garante que os diretórios necessários existem
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+  with_items:
+    - /tmp/prometheus
+    - /etc/prometheus
+    - /var/lib/prometheus
+
+
+- name: Realiza o download do prometheus.
+  ansible.builtin.get_url:
+    url: "{{ prometheus_binary_url }}"
+    dest: "/tmp/prometheus/prometheus-{{ prometheus_version }}.linux-{{ go_arch }}.tar.gz"
+
+
+- name: Extrai os arquivos do prometheus para o diretorio /tmp/prometheus.
+  ansible.builtin.unarchive:
+    src: "/tmp/prometheus/prometheus-{{ prometheus_version }}.linux-{{ go_arch }}.tar.gz"
+    dest: /tmp/prometheus
+    remote_src: yes
+
+- name: Copia o binario do prometheus e promtool para /usr/local/bin/
+  ansible.builtin.copy:
+    src: "/tmp/prometheus/prometheus-{{ prometheus_version }}.linux-{{ go_arch }}/{{item}}"
+    dest: /usr/local/bin/{{item}}
+    remote_src: yes
+    group: prometheus
+    owner: prometheus
+    mode: 0770
+  with_items:
+    - prometheus
+    - promtool
+
+- name: Copia os arquivos de configurações do prometheus
+  ansible.builtin.copy:
+    src: "/tmp/prometheus/prometheus-{{ prometheus_version }}.linux-{{ go_arch }}/{{item}}"
+    dest: /etc/prometheus/{{item}}
+    remote_src: yes
+    group: prometheus
+    owner: prometheus
+    
+  with_items:
+    - consoles/
+    - console_libraries/
+    - prometheus.yml
+
+- name: Cria o servico do prometheus
+  ansible.builtin.copy:
+    src: prometheus.service.unit
+    dest: /etc/systemd/system/prometheus.service
+
+- name: Recarrega as configurações do systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Inicia o serviço do prometheus e garante que ele sempre será iniciado com o sistema
+  ansible.builtin.systemd:
+    name: prometheus.service
+    state: started
+    enabled: true
+
+- name: Limpa o diretório de download do prometheus
+  ansible.builtin.file:
+    path: /tmp/prometheus
+    state: absent
+
